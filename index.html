@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>foto</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    overscroll-behavior: none;
+  }
+  #foto {
+    position: fixed;
+    inset: 0;
+    background: #000 url("foto.png") repeat;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    cursor: default;
+  }
+</style>
+</head>
+<body>
+<div id="foto"></div>
+<script>
+(() => {
+  const PHOTO_RATIO = 387 / 616;   // ancho / alto de foto.png
+  const KEY_STEP = 80;
+  const FRICTION = 0.95;
+  const MIN_SPEED = 0.05;
+  const ZOOM_KEYS = ['+', '-', '=', '0', '_'];
+  const PAN_KEYS = {
+    ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+    PageUp: [0, -6], PageDown: [0, 6], ' ': [0, 6],
+  };
+
+  const foto = document.getElementById('foto');
+  let tileW = 0, tileH = 0;
+  let x = 0, y = 0;          // desplazamiento dentro del mosaico
+  let vx = 0, vy = 0;        // inercia
+  let last = null;           // último punto del arrastre
+  let frame = 0;
+
+  const mod = (n, m) => ((n % m) + m) % m;
+
+  function draw() {
+    if (!tileH) return;   // ventana aún sin tamaño (pestaña oculta)
+    x = mod(x, tileW);
+    y = mod(y, tileH);
+    foto.style.backgroundPosition = `${-x}px ${-y}px`;
+  }
+
+  // La foto siempre mide lo que mide la ventana, así que el zoom del
+  // navegador no cambia nada: se recalcula y vuelve a estar igual.
+  function layout() {
+    const isFirstLayout = !tileH;
+    tileH = window.innerHeight;
+    tileW = tileH * PHOTO_RATIO;
+    if (!tileH) return;
+    if (isFirstLayout) x = (tileW - window.innerWidth) / 2;   // empieza con una foto centrada
+    foto.style.backgroundSize = `${tileW}px ${tileH}px`;
+    draw();
+  }
+
+  function pan(dx, dy) {
+    x += dx;
+    y += dy;
+    draw();
+  }
+
+  function glide() {
+    vx *= FRICTION;
+    vy *= FRICTION;
+    if (Math.abs(vx) < MIN_SPEED && Math.abs(vy) < MIN_SPEED) { frame = 0; return; }
+    pan(vx, vy);
+    frame = requestAnimationFrame(glide);
+  }
+
+  function stopGlide() {
+    cancelAnimationFrame(frame);
+    frame = 0;
+    vx = vy = 0;
+  }
+
+  foto.addEventListener('pointerdown', (e) => {
+    stopGlide();
+    last = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    foto.setPointerCapture(e.pointerId);
+  });
+
+  foto.addEventListener('pointermove', (e) => {
+    if (!last || e.pointerId !== last.id) return;
+    vx = last.x - e.clientX;
+    vy = last.y - e.clientY;
+    last = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    pan(vx, vy);
+  });
+
+  function release(e) {
+    if (!last || e.pointerId !== last.id) return;
+    last = null;
+    if (!frame) frame = requestAnimationFrame(glide);
+  }
+  foto.addEventListener('pointerup', release);
+  foto.addEventListener('pointercancel', release);
+
+  window.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) return;   // pellizco / ctrl+rueda = zoom: se ignora
+    stopGlide();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? tileH : 1;
+    pan(e.deltaX * unit, e.deltaY * unit);
+  }, { passive: false });
+
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && ZOOM_KEYS.includes(e.key)) { e.preventDefault(); return; }
+    const dir = PAN_KEYS[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    stopGlide();
+    pan(dir[0] * KEY_STEP, dir[1] * KEY_STEP);
+  });
+
+  // Nada más que hacer: sin menú, sin selección, sin arrastrar, sin pellizco.
+  for (const type of ['contextmenu', 'selectstart', 'dragstart', 'gesturestart', 'gesturechange', 'gestureend', 'dblclick']) {
+    document.addEventListener(type, (e) => e.preventDefault());
+  }
+  document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+  window.addEventListener('resize', layout);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', layout);
+
+  layout();
+})();
+</script>
+</body>
+</html>
